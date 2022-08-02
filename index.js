@@ -7,7 +7,6 @@ mongoose.connect(process.env.MONGO_URI, {useNewUrlParser: true, useUnifiedTopolo
 
 const app = express()
 const cors = require('cors')
-const { ObjectId } = require('mongodb')
 const bodyP = bodyParser.urlencoded({extended: false})
 
 
@@ -47,7 +46,6 @@ app.get('/', (req, res) => {
 
 
 
-
 app.post('/api/users', (req, res) => {
   let newUser = new User({
     username: req.body.username
@@ -77,7 +75,9 @@ app.get('/api/users', (req, res) => {
 
 app.post('/api/users/:_id/exercises', (req, res) => {
   let realDate = req.body.date
-  console.log(req.body, realDate, req.body[':_id'])
+  
+  console.log('reqbody: ', req.body.description, req.body.duration, realDate, req.params._id)
+  
   if(realDate == undefined || realDate == ''){
     realDate = new Date()
   }else{
@@ -86,8 +86,18 @@ app.post('/api/users/:_id/exercises', (req, res) => {
 
   realDate = realDate.toISOString().split('T')[0]
 
+  let uid
+  if(req.params._id){
+    uid = req.params._id
+  }else if(req.body[':_id']){
+    uid = req.body[':_id']
+  }else if(!req.params._id || req.params._id == undefined){
+    console.log('gotemp')
+    res.json({error: 'ID not found'})
+  }
+  
   let newExercise = new Exercise({
-    user: req.body[':_id'],
+    user: uid,
     description: req.body.description,
     duration: req.body.duration,
     date: realDate
@@ -96,15 +106,15 @@ app.post('/api/users/:_id/exercises', (req, res) => {
   newExercise.save(function(err, data){
     if(err) return console.log(err)
 
-    console.log(data, data.user)
+    console.log('data:p ', data)
     User.findById(data.user, (err, result) => {
       if(err) return console.log(err)
-      console.log(result)
+      console.log('result:p ', result)
       res.json({
       username: result.username,
       description: data.description,
       duration: data.duration,
-      date: new Date(data.date).toUTCString().replace(/\d\d:.*/, ''),
+      date: new Date(data.date).toUTCString().replace(/\d\d:.*/, '').replace(/\s$/, '').replace(/,/, '').replace(/\s([\d]{2})\s([a-zA-Z]{3})\s/, ' $2 $1 '),
       _id: data.user,
     })
     })
@@ -121,10 +131,11 @@ app.post('/api/users/:_id/exercises', (req, res) => {
 
 
 app.get('/api/users/:_id/logs', (req, res) => {
+  console.log('req.query: ', req.query)
   let newResults = []
   let queryLimit = 0
   let queryFrom = 0
-  let queryTo = 0
+  let queryTo = 3000
 
   if(req.query.limit){
     queryLimit = req.query.limit
@@ -136,21 +147,24 @@ app.get('/api/users/:_id/logs', (req, res) => {
     queryTo = req.query.to
   }
 
-  console.log(req.query.from, req.query.to ,req.query.limit)
+  console.log('reqparams id: ', req.params._id)
+  console.log('queries: ', req.query.from, req.query.to ,req.query.limit)
 
   User.findById(req.params._id, function(err, data){
     if(err) return console.log(err)
 
+    console.log('found data')
     Exercise.find({user: data._id, date: {$gte: queryFrom, $lte: queryTo}}).select('description duration date -_id').limit(queryLimit).lean().exec((err, result) => {
       if(err) return console.log(err)
-  
-      console.log('result: ', result)
+
+      console.log('found result')
+      // console.log('result: ', result)
       result = result.reduce((r, c, i, a) => {
         r = {}
         for(let o in c){
           if(o == 'date'){
-            console.log(o)
-            r[o] = new Date(c[o]).toUTCString().replace(/\d\d:.*/, '')
+            // console.log(o)
+            r[o] = new Date(c[o]).toUTCString().replace(/\d\d:.*/, '').replace(/,/, '').replace(/\s([\d]{2})\s([a-zA-Z]{3})\s/, ' $2 $1 ').replace(/\s$/, '')
           }else{
             r[o] = c[o]
           }
@@ -158,11 +172,12 @@ app.get('/api/users/:_id/logs', (req, res) => {
         newResults.push(r)
         return r;
       }, {})
-      console.log('newResults: ', newResults)
-
+      // console.log('newResults: ', newResults)
+      console.log('sorted result')
       Exercise.countDocuments({user: data._id}, function(e, c){
         if(e) return console.log(e)
-  
+
+        console.log('found count')
         res.json({
           username: data.username,
           count: c,
@@ -173,6 +188,8 @@ app.get('/api/users/:_id/logs', (req, res) => {
     })
   })
 })
+
+
 
 
 
